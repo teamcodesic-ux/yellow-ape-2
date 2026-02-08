@@ -34,11 +34,8 @@ export default function GameNavbar({
     >
       <div className="flex items-center gap-3">
         <Link href="/" className="flex items-center gap-2" aria-label="CrashX Home">
-          <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-[#7c3aed] to-[#a78bfa] flex items-center justify-center">
-            <Rocket className="w-4 h-4 text-white" />
-          </div>
           <span className="text-3xl font-bold text-white hidden sm:block">
-            Crash<span className="text-[#a78bfa]">X</span>
+            Higher!!
           </span>
         </Link>
       </div>
@@ -46,23 +43,18 @@ export default function GameNavbar({
       {/* Balance Display */}
       <div className="flex items-center gap-6">
         <div className="flex items-center gap-2">
-          <span className="text-sm text-purple-300/70">Chain:</span>
+          <span className="text-md text-purple-300/70">Chain:</span>
           <span className={`text-sm font-medium ${networkOk ? "text-green-400" : "text-orange-400"}`}>
             {chainName}
           </span>
         </div>
         <div className="flex items-center gap-2">
-          <span className="text-sm text-purple-300/70">{tokenSymbol}:</span>
-          <span className="text-sm font-medium text-white">
-            {balanceLoading ? "..." : tokenBalance}
+          <span className="text-md text-purple-300/70">ytest.USD:</span>
+          <span className="text-md font-bold font-medium text-white">
+             {unifiedBalanceLoading ? "..." : unifiedBalance}
           </span>
         </div>
-        <div className="flex items-center gap-2">
-          <span className="text-sm text-purple-300/70">Yellow:</span>
-          <span className="text-sm font-medium text-purple-300">
-            {unifiedBalanceLoading ? "..." : unifiedBalance}
-          </span>
-        </div>
+       
       </div>
 
       <div className="min-w-[250px]">

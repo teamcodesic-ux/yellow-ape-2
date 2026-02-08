@@ -183,8 +183,10 @@ class GameStore {
     if (this.state.status === "active") {
       throw new Error("Cannot change lobby while a session is active");
     }
-    if (this.pendingAction) {
-      throw new Error("Cannot change lobby while signatures are being collected");
+    // When there's a pending CLOSE action in non-ended state, block changes
+    // (a pending START action is OK — it will be rebuilt with updated players)
+    if (this.pendingAction && this.pendingAction.type === "close") {
+      throw new Error("Cannot change lobby while a close action is being signed");
     }
   }
 
@@ -221,6 +223,16 @@ class GameStore {
       this.state.players[existingIndex] = nextPlayer;
     } else {
       this.state.players.push(nextPlayer);
+    }
+
+    // Clear stale round data when transitioning back to lobby
+    if (this.state.status === "ended" || this.state.status === "lobby") {
+      if (this.pendingAction && this.pendingAction.type === "start") {
+        this.pendingAction = null; // stale start action — will be rebuilt
+      }
+      this.state.crashMultiplier = null;
+      this.state.winners = [];
+      this.state.settlementTxHashes = [];
     }
 
     this.state.status = "lobby";

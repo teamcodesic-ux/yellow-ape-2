@@ -3,7 +3,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   createPublicClient,
-  encodeFunctionData,
   http,
   keccak256,
   parseUnits,
@@ -13,6 +12,8 @@ import {
 import { privateKeyToAccount } from "viem/accounts";
 import { baseSepolia } from "viem/chains";
 import { useAccount, useChainId } from "wagmi";
+import { getWalletClient } from "@wagmi/core";
+import { wagmiConfig } from "@/components/Web3Providers";
 import { erc20Abi } from "@/lib/erc20";
 import type { GameState } from "@/types/game";
 import type {
@@ -190,6 +191,20 @@ export default function HomePage() {
     return () => clearInterval(interval);
   }, [refreshState]);
 
+  // Auto-clear error messages after 8 seconds
+  useEffect(() => {
+    if (!uiError) return;
+    const timer = setTimeout(() => setUiError(null), 8000);
+    return () => clearTimeout(timer);
+  }, [uiError]);
+
+  // Auto-clear info messages after 5 seconds
+  useEffect(() => {
+    if (!uiMessage) return;
+    const timer = setTimeout(() => setUiMessage(null), 5000);
+    return () => clearTimeout(timer);
+  }, [uiMessage]);
+
   const submitWithFeedback = useCallback(
     async (task: () => Promise<void>) => {
       setSubmitting(true);
@@ -210,10 +225,6 @@ export default function HomePage() {
 
   const authorizeParticipantSession = useCallback(
     async (wallet: `0x${string}`): Promise<`0x${string}`> => {
-      if (!window.ethereum) {
-        throw new Error("MetaMask is required");
-      }
-
       const requestChallenge = async (sessionKey: `0x${string}`): Promise<ParticipantAuthChallenge> => {
         return await readJson<ParticipantAuthChallenge>("/api/yellow/auth/request", {
           method: "POST",
@@ -223,9 +234,10 @@ export default function HomePage() {
       };
 
       const verifyWithSessionKey = async (sessionKey: `0x${string}`): Promise<void> => {
-        const ethereum = window.ethereum;
-        if (!ethereum) {
-          throw new Error("MetaMask is required");
+        // Use wagmi's wallet client (properly authorized via RainbowKit connector)
+        const walletClient = await getWalletClient(wagmiConfig);
+        if (!walletClient) {
+          throw new Error("Wallet not connected. Please connect your wallet first.");
         }
 
         const challenge = await requestChallenge(sessionKey);
@@ -239,10 +251,12 @@ export default function HomePage() {
           allowances: challenge.allowances,
         });
 
-        const signature = (await ethereum.request({
-          method: "eth_signTypedData_v4",
-          params: [wallet, JSON.stringify(typedData)],
-        })) as string;
+        const signature = await walletClient.signTypedData({
+          domain: typedData.domain as { name: string },
+          types: typedData.types as Record<string, Array<{ name: string; type: string }>>,
+          primaryType: typedData.primaryType as string,
+          message: typedData.message as Record<string, unknown>,
+        });
 
         await readJson<{ success: boolean }>("/api/yellow/auth/verify", {
           method: "POST",
@@ -283,7 +297,7 @@ export default function HomePage() {
 
   const joinLobby = useCallback(async () => {
     if (!account) {
-      throw new Error("Connect MetaMask first");
+      throw new Error("Connect wallet first");
     }
 
     if (!networkOk) {
@@ -304,8 +318,9 @@ export default function HomePage() {
       throw new Error("Token mapping or admin wallet is not available.");
     }
 
-    if (!window.ethereum) {
-      throw new Error("MetaMask is required");
+    const walletClient = await getWalletClient(wagmiConfig);
+    if (!walletClient) {
+      throw new Error("Wallet not connected. Please connect your wallet first.");
     }
 
     const publicClient = createPublicClient({
@@ -328,24 +343,15 @@ export default function HomePage() {
     });
 
     if (currentAllowance < requiredAmount) {
-      const approveData = encodeFunctionData({
+      const approvalTxHash = await walletClient.writeContract({
+        address: config.tokenAddress,
         abi: erc20Abi,
         functionName: "approve",
         args: [config.adminWallet, requiredAmount],
+        chain: baseSepolia,
       });
 
-      const approvalTxHash = (await window.ethereum.request({
-        method: "eth_sendTransaction",
-        params: [
-          {
-            from: account,
-            to: config.tokenAddress,
-            data: approveData,
-          },
-        ],
-      })) as string;
-
-      await publicClient.waitForTransactionReceipt({ hash: approvalTxHash as Hex });
+      await publicClient.waitForTransactionReceipt({ hash: approvalTxHash });
     }
 
     const sessionKey = await authorizeParticipantSession(account);
@@ -374,7 +380,7 @@ export default function HomePage() {
 
   const leaveLobby = useCallback(async () => {
     if (!account) {
-      throw new Error("Connect MetaMask first");
+      throw new Error("Connect wallet first");
     }
 
     await readJson<GameState>("/api/game/leave", {
@@ -408,11 +414,7 @@ export default function HomePage() {
 
   const withdrawUnifiedToOnchain = useCallback(async () => {
     if (!account) {
-      throw new Error("Connect MetaMask first");
-    }
-
-    if (!window.ethereum) {
-      throw new Error("MetaMask is required");
+      throw new Error("Connect wallet first");
     }
 
     if (!networkOk) {
@@ -514,19 +516,18 @@ export default function HomePage() {
           });
         }
 
-        const txHash = (await window.ethereum.request({
-          method: "eth_sendTransaction",
-          params: [
-            {
-              from: account,
-              to: tx.to,
-              data: tx.data,
-            },
-          ],
-        })) as string;
+        const withdrawWalletClient = await getWalletClient(wagmiConfig);
+        if (!withdrawWalletClient) {
+          throw new Error("Wallet not connected.");
+        }
+        const txHash = await withdrawWalletClient.sendTransaction({
+          to: tx.to,
+          data: tx.data,
+          chain: baseSepolia,
+        });
 
         txHashes.push(txHash);
-        const receipt = await publicClient.waitForTransactionReceipt({ hash: txHash as Hex });
+        const receipt = await publicClient.waitForTransactionReceipt({ hash: txHash });
         if (receipt.status !== "success") {
           console.error("[withdraw] transaction receipt status is not success", {
             index,
@@ -553,6 +554,8 @@ export default function HomePage() {
 
     if (execution.flow === "open_channel") {
       setChannelBootstrapPending(true);
+      // Auto-clear channelBootstrapPending after 15 seconds so the button isn't stuck disabled forever
+      setTimeout(() => setChannelBootstrapPending(false), 15_000);
       if (txHashes.length > 0) {
         setUiMessage(
           `Channel opened (${txHashes.join(", ")}). Wait a few seconds, then click Withdraw again.`,
@@ -568,7 +571,6 @@ export default function HomePage() {
   }, [
     account,
     authorizeParticipantSession,
-    channelBootstrapPending,
     config?.tokenAddress,
     networkOk,
     withdrawAmountInput,
@@ -577,7 +579,7 @@ export default function HomePage() {
 
   const cashOutToWallet = useCallback(async () => {
     if (!account) {
-      throw new Error("Connect MetaMask first");
+      throw new Error("Connect wallet first");
     }
 
     const sessionPrivateKey = getSessionPrivateKey(account);
@@ -594,7 +596,7 @@ export default function HomePage() {
       throw new Error("Unified balance must be greater than 0 to cash out.");
     }
 
-    // Ensure we have valid authentication (may prompt for MetaMask signature if expired)
+    // Ensure we have valid authentication (may prompt for wallet signature if expired)
     setUiMessage("Authenticating session...");
     await authorizeParticipantSession(account);
 
@@ -667,7 +669,7 @@ export default function HomePage() {
 
   const signPendingAction = useCallback(async () => {
     if (!account) {
-      throw new Error("Connect MetaMask first");
+      throw new Error("Connect wallet first");
     }
 
     if (!pendingActionData) {
@@ -821,13 +823,15 @@ export default function HomePage() {
     };
   }, [account]);
 
-  const canJoin = !!account && state.status !== "active" && !state.pendingAction && !submitting;
+  const pendingActionBlocksLobby = !!state.pendingAction && state.pendingAction.type === "close";
+  const canJoin = !!account && state.status !== "active" && !submitting && !pendingActionBlocksLobby;
   const canWithdrawUnified =
     !!account &&
     !!config?.tokenAddress &&
     networkOk &&
     withdrawAmountWithinBalance &&
-    !submitting;
+    !submitting &&
+    !channelBootstrapPending;
   const canStartSession =
     state.canStart &&
     !!config?.tokenAddress &&
@@ -950,6 +954,18 @@ export default function HomePage() {
                 submitting={submitting}
                 channelBootstrapPending={channelBootstrapPending}
               />
+
+              {/* Error / Info messages */}
+              {uiError && (
+                <div className="mb-3 px-3 py-2 rounded-lg bg-red-500/10 border border-red-500/30 text-red-400 text-xs break-words">
+                  {uiError}
+                </div>
+              )}
+              {uiMessage && !uiError && (
+                <div className="mb-3 px-3 py-2 rounded-lg bg-purple-500/10 border border-purple-500/30 text-purple-300 text-xs break-words">
+                  {uiMessage}
+                </div>
+              )}
             </div>
 
             {/* Lobby Panel */}
@@ -966,8 +982,9 @@ export default function HomePage() {
                   isInLobby={!!me}
                   onJoin={() => void submitWithFeedback(joinLobby)}
                   onLeave={() => void submitWithFeedback(leaveLobby)}
-                  canLeave={!!me && state.status !== "active" && !state.pendingAction && !submitting}
+                  canLeave={!!me && state.status !== "active" && !submitting && !pendingActionBlocksLobby}
                   autoStatus={autoStatus}
+                  submitting={submitting}
                 />
                 
                 {/* Pending Signatures */}

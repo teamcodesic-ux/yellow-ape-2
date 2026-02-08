@@ -27,6 +27,7 @@ type BetPanelProps = {
   onLeave: () => void;
   canLeave: boolean;
   autoStatus?: AutoStatus;
+  submitting?: boolean;
 };
 
 export default function BetPanel({
@@ -42,6 +43,7 @@ export default function BetPanel({
   onLeave,
   canLeave,
   autoStatus = "waiting-players",
+  submitting = false,
 }: BetPanelProps) {
   const statusInfo = AUTO_STATUS_CONFIG[autoStatus];
   return (
@@ -105,7 +107,7 @@ export default function BetPanel({
             disabled={!canJoin}
             className="flex-1 btn-gradient-gold px-4 py-3 rounded-xl text-sm font-bold transition-all disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            {isInLobby ? "Update" : "Join Lobby"}
+            {submitting ? "Processing..." : isInLobby ? "Update" : "Join Lobby"}
           </button>
           <button
             onClick={onLeave}

@@ -32,33 +32,42 @@ function serializeError(error: unknown): Record<string, unknown> {
 
 /**
  * Fire-and-forget: attempt to auto-start a session when enough players are ready.
+ * Has a 10s timeout to avoid hanging if Yellow WS is slow.
  * Failures are logged but never bubble up to the caller so the join itself always succeeds.
  */
 async function tryAutoStartSession(): Promise<void> {
+  const timeout = new Promise<never>((_, reject) =>
+    setTimeout(() => reject(new Error("auto-start timed out")), 10_000),
+  );
+
   try {
-    const current = gameStore.getState();
-
-    if (current.status === "active" || current.pendingAction) return;
-    if (!canStartGame(current.players)) return;
-
-    const missingAuth = gameStore.getMissingSessionAuth(current.players.map((p) => p.wallet));
-    if (missingAuth.length > 0) return;
-
-    await assertPlayersCanCoverLosses(current.players);
-
-    const crashMultiplier = generateCrashMultiplier();
-    const winners = computeWinners(current.players, crashMultiplier);
-    const action = await buildStartPendingAction({
-      players: current.players,
-      winners,
-      crashMultiplier,
-    });
-
-    gameStore.setPendingAction(action);
-    console.log("[auto-start] session start action created after join");
+    await Promise.race([tryAutoStartSessionInner(), timeout]);
   } catch (error) {
     console.warn("[auto-start] skipped:", error instanceof Error ? error.message : error);
   }
+}
+
+async function tryAutoStartSessionInner(): Promise<void> {
+  const current = gameStore.getState();
+
+  if (current.status === "active" || current.pendingAction) return;
+  if (!canStartGame(current.players)) return;
+
+  const missingAuth = gameStore.getMissingSessionAuth(current.players.map((p) => p.wallet));
+  if (missingAuth.length > 0) return;
+
+  await assertPlayersCanCoverLosses(current.players);
+
+  const crashMultiplier = generateCrashMultiplier();
+  const winners = computeWinners(current.players, crashMultiplier);
+  const action = await buildStartPendingAction({
+    players: current.players,
+    winners,
+    crashMultiplier,
+  });
+
+  gameStore.setPendingAction(action);
+  console.log("[auto-start] session start action created after join");
 }
 
 export async function POST(request: Request) {
@@ -91,10 +100,17 @@ export async function POST(request: Request) {
       );
     }
 
+    // Clear any stale start pending action so the new player is included
+    const existing = gameStore.getPendingAction();
+    if (existing && existing.type === "start") {
+      gameStore.clearPendingAction();
+      console.log("[join] Cleared stale start pending action to include new player");
+    }
+
     gameStore.upsertPlayer(payload.wallet, payload.multiplier, payload.betAmount);
 
-    // Attempt auto-start (fire-and-forget, never fails the join)
-    await tryAutoStartSession();
+    // Fire-and-forget auto-start — never blocks the join response
+    tryAutoStartSession().catch(() => {});
 
     return NextResponse.json(gameStore.getState());
   } catch (error) {

@@ -15,14 +15,11 @@ export default function Navbar() {
     >
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
  
-        <Link href="/" className="flex items-center gap-2 group" aria-label="CrashX Home">
-          <div className="w-9 h-9 rounded-lg bg-gradient-to-br from-[#7c3aed] to-[#a78bfa] flex items-center justify-center neon-glow-sm group-hover:scale-110 transition-transform">
-            <Rocket className="w-5 h-5 text-white" />
-          </div>
-          <span className="text-xl font-bold text-white tracking-tight">
-            Crash<span className="text-[#a78bfa]">X</span>
+         <Link href="/" className="flex items-center gap-2" aria-label="CrashX Home">
+          <span className="text-3xl font-bold text-white hidden sm:block">
+            Higher!!
           </span>
-        </Link>
+          </Link>
 
         <div className="hidden md:flex items-center gap-8">
           

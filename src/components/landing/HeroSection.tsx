@@ -234,7 +234,7 @@ export default function HeroSection() {
               { label: "AVG. ROUND TIME", value: "8s", suffix: "" },
               { label: "HOUSE EDGE", value: "3.5", suffix: "%" },
               { label: "MAX MULTIPLIER", value: "1000", suffix: "x" },
-              { label: "MIN. BET", value: "0.01", suffix: "ETH" },
+              { label: "MIN. BET", value: "1", suffix: "yt.USD" },
             ].map((stat, idx) => (
               <motion.div
                 key={stat.label}

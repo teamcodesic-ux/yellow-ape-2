@@ -13,6 +13,13 @@ export async function POST(request: Request) {
   try {
     const body = await request.json();
     const payload = leaveSchema.parse(body);
+
+    // Clear a stale start pending action so the player can leave
+    const existing = gameStore.getPendingAction();
+    if (existing && existing.type === "start") {
+      gameStore.clearPendingAction();
+    }
+
     const state = gameStore.removePlayer(payload.wallet);
     return NextResponse.json(state);
   } catch (error) {

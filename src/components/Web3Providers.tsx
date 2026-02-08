@@ -7,7 +7,7 @@ import { WagmiProvider } from "wagmi";
 import { baseSepolia } from "wagmi/chains";
 import { QueryClientProvider, QueryClient } from "@tanstack/react-query";
 
-const config = getDefaultConfig({
+export const wagmiConfig = getDefaultConfig({
   appName: "Yellow Crash Test",
   projectId: "04cdb29f5b1580b542490a4f378e5913",
   chains: [baseSepolia],
@@ -18,7 +18,7 @@ const queryClient = new QueryClient();
 
 export default function Web3Providers({ children }: { children: React.ReactNode }) {
   return (
-    <WagmiProvider config={config}>
+    <WagmiProvider config={wagmiConfig}>
       <QueryClientProvider client={queryClient}>
         <RainbowKitProvider
           theme={darkTheme({
